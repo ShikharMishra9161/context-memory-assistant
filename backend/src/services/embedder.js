@@ -1,14 +1,19 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+// text-embedding-004 was retired Jan 2026; gemini-embedding-001 is the replacement
+const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
 
 /**
  * Generate 768-dim embedding for a string
  */
 async function embed(text) {
-  const result = await model.embedContent(text);
-  return result.embedding.values; // float[]
+  const result = await model.embedContent({
+    content: { parts: [{ text }] },
+    taskType: 'RETRIEVAL_DOCUMENT',
+    outputDimensionality: 768,
+  });
+  return result.embedding.values;
 }
 
 /**

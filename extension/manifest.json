@@ -5,6 +5,7 @@
   "description": "Inject your context into AI tools automatically",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
+    "http://localhost:4000/*",
     "https://chatgpt.com/*",
     "https://gemini.google.com/*",
     "https://claude.ai/*"
@@ -30,6 +31,6 @@
     }
   ],
   "action": {
-  "default_popup": "popup/index.html"
-}
+    "default_popup": "dist-popup/index.html"
+  }
 }

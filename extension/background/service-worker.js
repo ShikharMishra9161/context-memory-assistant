@@ -71,9 +71,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === 'SYNC_MEMORIES') {
     syncMemories()
       .then(memories => reply({ memories }))
-      .catch(error => {
+      .catch(async (error) => {
         console.error('Sync failed:', error);
-        reply({ error: error.message });
+        const data = await chrome.storage.local.get(['memories']);
+        reply({ memories: data.memories || [], error: error.message });
       });
 
     return true;
@@ -89,21 +90,35 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       body: JSON.stringify(msg.payload)
     })
       .then(r => r.json())
-      .then(mem => {
-        syncMemories();
-
-        reply({
-          success: true,
-          memory: mem
-        });
+      .then(async (mem) => {
+        const memories = await syncMemories();
+        reply({ success: true, memory: mem, memories });
       })
       .catch(error => {
         console.error('Save failed:', error);
+        reply({ success: false, error: error.message });
+      });
 
-        reply({
-          success: false,
-          error: error.message
-        });
+    return true;
+  }
+
+  // Update memory
+  if (msg.type === 'UPDATE_MEMORY') {
+    fetch(`${API_BASE}/memory/${msg.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(msg.payload)
+    })
+      .then(r => r.json())
+      .then(async (mem) => {
+        const memories = await syncMemories();
+        reply({ success: true, memory: mem, memories });
+      })
+      .catch(error => {
+        console.error('Update failed:', error);
+        reply({ success: false, error: error.message });
       });
 
     return true;
@@ -114,29 +129,42 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     fetch(`${API_BASE}/memory/${msg.id}`, {
       method: 'DELETE'
     })
-      .then(() => {
-        syncMemories();
-
-        reply({
-          success: true
-        });
+      .then(async () => {
+        const memories = await syncMemories();
+        reply({ success: true, memories });
       })
       .catch(error => {
         console.error('Delete failed:', error);
-
-        reply({
-          success: false,
-          error: error.message
-        });
+        reply({ success: false, error: error.message });
       });
 
     return true;
   }
 });
 
-// Sync on extension install
-chrome.runtime.onInstalled.addListener(() => {
+// Reload AI tabs after extension update so content scripts reconnect
+const AI_TAB_PATTERNS = [
+  'https://chatgpt.com/*',
+  'https://gemini.google.com/*',
+  'https://claude.ai/*',
+];
+
+async function reloadAiTabs() {
+  const tabs = await chrome.tabs.query({ url: AI_TAB_PATTERNS });
+  for (const tab of tabs) {
+    if (tab.id) {
+      chrome.tabs.reload(tab.id).catch(() => {});
+    }
+  }
+}
+
+// Sync on extension install / update
+chrome.runtime.onInstalled.addListener((details) => {
   syncMemories().catch(console.error);
+
+  if (details.reason === 'update') {
+    reloadAiTabs().catch(console.error);
+  }
 });
 
 // Sync every 5 minutes

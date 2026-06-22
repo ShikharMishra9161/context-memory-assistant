@@ -1,10 +1,16 @@
 (async function () {
   let injected = false;
 
-  // Get selector from service worker
-  const { selectors } = await chrome.runtime.sendMessage({
-    type: 'GET_SELECTORS'
-  });
+  let selectors;
+  try {
+    selectors = await window.CMA.getSelectors();
+  } catch (err) {
+    console.error('[CMA] Failed to load selectors:', err);
+    if (window.CMA.isContextInvalidatedError(err)) {
+      window.CMA.handleContextInvalidated({ autoReload: true });
+    }
+    return;
+  }
 
   const SELECTOR = selectors.chatgpt;
 
@@ -15,7 +21,7 @@
     const btn = window.CMA.createInjectButton();
     document.body.appendChild(btn);
 
-    btn.addEventListener('click', async () => {
+    window.CMA.wrapInjectClick(btn, async () => {
       const memories = await window.CMA.getMemories();
       const context = window.CMA.buildContextBlock(memories);
 
@@ -24,27 +30,28 @@
         return;
       }
 
-      // Find ChatGPT input
       const editable = document.querySelector(SELECTOR);
-      if (!editable) return;
+
+      if (!editable) {
+        window.CMA.flashButton(btn, '⚠️ Editor not found');
+        return;
+      }
 
       editable.focus();
 
-      // Preserve existing prompt text
       const existing = editable.innerText.trim();
+      const finalText = context + (existing ? '\n\n' + existing : '');
 
-      editable.innerText =
-        context + (existing ? '\n\n' + existing : '');
+      editable.textContent = finalText;
 
-      // Notify React that content changed
       editable.dispatchEvent(
         new InputEvent('input', {
           bubbles: true,
-          cancelable: true
+          cancelable: true,
+          inputType: 'insertText',
         })
       );
 
-      // Move cursor to end
       const range = document.createRange();
       const selection = window.getSelection();
 
@@ -54,7 +61,7 @@
       selection.removeAllRanges();
       selection.addRange(range);
 
-      window.CMA.flashButton(btn, '✅ Injected!');
+      window.CMA.flashButton(btn, `✅ Injected ${memories.length} memories`);
     });
   });
 })();

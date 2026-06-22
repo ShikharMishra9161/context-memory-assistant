@@ -2,14 +2,29 @@ import { useState } from 'react';
 
 const CATEGORIES = ['project', 'skill', 'goal', 'note'];
 
-export default function AddForm({ onSave }) {
-  const [form, setForm] = useState({ title: '', content: '', category: 'project', tags: '' });
+function toFormState(initial) {
+  if (!initial) {
+    return { title: '', content: '', category: 'project', tags: '' };
+  }
+  return {
+    title: initial.title || '',
+    content: initial.content || '',
+    category: initial.category || 'project',
+    tags: Array.isArray(initial.tags) ? initial.tags.join(', ') : '',
+  };
+}
+
+export default function AddForm({ initial, onSave }) {
+  const [form, setForm] = useState(() => toFormState(initial));
+  const isEditing = Boolean(initial?._id);
 
   function handleSave() {
     if (!form.title.trim() || !form.content.trim()) return;
     onSave({
-      ...form,
-      tags: form.tags.split(',').map(t => t.trim()).filter(Boolean)
+      title: form.title.trim(),
+      content: form.content.trim(),
+      category: form.category,
+      tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
     });
   }
 
@@ -51,7 +66,7 @@ export default function AddForm({ onSave }) {
         onClick={handleSave}
         className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium py-2 rounded-md transition-colors"
       >
-        Save Memory
+        {isEditing ? 'Update Memory' : 'Save Memory'}
       </button>
     </div>
   );
