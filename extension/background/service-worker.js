@@ -1,5 +1,10 @@
-const API_BASE = 'http://localhost:4000';
+const IS_DEV = false; // flip to true during local dev
+const API_BASE = IS_DEV
+  ? 'http://localhost:3001'
+  : 'https://context-memory-api.onrender.com';
 
+
+ 
 // Selector config — update here if sites change their DOM
 const SELECTORS = {
   chatgpt: '#prompt-textarea',
@@ -171,3 +176,32 @@ chrome.runtime.onInstalled.addListener((details) => {
 setInterval(() => {
   syncMemories().catch(console.error);
 }, 5 * 60 * 1000);
+
+ // --------------------------------------------------
+// Keep Render backend awake (free tier)
+// --------------------------------------------------
+
+function keepAlive() {
+  fetch(`${API_BASE}/health`)
+    .then(() => console.log('KeepAlive ping sent'))
+    .catch(err => console.warn('KeepAlive failed:', err));
+}
+
+// Create alarm every 10 minutes
+chrome.alarms.create('keepAlive', {
+  periodInMinutes: 10
+});
+
+// Listen for alarm
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'keepAlive') {
+    keepAlive();
+  }
+});
+
+// Ping once when extension/browser starts
+if (chrome.runtime.onStartup) {
+  chrome.runtime.onStartup.addListener(() => {
+    keepAlive();
+  });
+}

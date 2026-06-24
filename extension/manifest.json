@@ -3,15 +3,18 @@
   "name": "Context Memory Assistant",
   "version": "1.0.0",
   "description": "Inject your context into AI tools automatically",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage", "activeTab", "scripting","alarms"],
   "host_permissions": [
     "http://localhost:4000/*",
     "https://chatgpt.com/*",
     "https://gemini.google.com/*",
-    "https://claude.ai/*"
+    "https://claude.ai/*",
+    "https://context-memory-api.onrender.com/*"
+    
   ],
   "background": {
-    "service_worker": "background/service-worker.js"
+    "service_worker": "background/service-worker.js",
+    "type": "module"
   },
   "content_scripts": [
     {
