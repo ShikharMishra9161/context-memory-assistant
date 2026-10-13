@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getSettings } from '../../lib/settings.js';
+import { LLM_PROVIDERS } from '../../../shared/handoff-core/index.js';
 import { getActiveTab } from './lib/tabs';
 import { detectPlatform } from './lib/platforms';
 import { loadDraft, saveDraft } from './lib/store';
@@ -30,6 +31,21 @@ export default function App() {
       .catch(err => setLoadError(err.message));
   }, []);
 
+  // The side panel stays open while the user switches tabs or navigates, so
+  // keep the active tab current (e.g. after opening a new chat).
+  useEffect(() => {
+    const refresh = () => getActiveTab().then(setActiveTab).catch(() => {});
+    const onUpdated = (id, change, t) => { if (t.active && (change.url || change.status === 'complete')) refresh(); };
+    chrome.tabs.onActivated.addListener(refresh);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.windows?.onFocusChanged?.addListener(refresh);
+    return () => {
+      chrome.tabs.onActivated.removeListener(refresh);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.windows?.onFocusChanged?.removeListener(refresh);
+    };
+  }, []);
+
   // "Update from current chat" on a saved handoff: start a draft that targets it.
   async function useForUpdate(record) {
     const next = { mode: record.mode || settings.defaultMode, projectName: record.projectName || '', customInstructions: '', targetId: record.id, title: record.title };
@@ -43,12 +59,15 @@ export default function App() {
   if (!settings || draft === undefined) return <p className="p-4 text-sm text-slate-500">Loading…</p>;
 
   const platform = detectPlatform(activeTab?.url);
+  const modeLabel = settings.aiMode === 'backend' ? 'AI via your backend'
+    : settings.aiMode === 'byok' ? `AI: ${LLM_PROVIDERS[settings.byok.provider]?.label || settings.byok.provider}`
+      : 'Local mode';
 
   return (
     <div className="flex flex-col">
       <header className="px-4 pt-3 flex justify-between items-center">
         <h1 className="text-indigo-400 font-bold text-base">🧠 Context Memory</h1>
-        <span className="text-[10px] text-slate-500">{settings.useBackendAI ? 'AI via backend' : 'Local mode'}</span>
+        <span className="text-[10px] text-slate-500">{modeLabel}</span>
       </header>
       <nav className="px-4 mt-2 flex gap-1 border-b border-slate-800" role="tablist">
         {TABS.map(([id, label]) => (
@@ -68,7 +87,7 @@ export default function App() {
         {tab === 'memories' && <MemoriesView />}
         {tab === 'settings' && <SettingsView settings={settings} onChange={s => setSettings(s)} />}
       </main>
-      {tab === 'handoff' && !settings.useBackendAI && !draft?.result && (
+      {tab === 'handoff' && settings.aiMode === 'off' && !draft?.result && (
         <p className="px-4 pb-3 text-[10px] text-slate-500">
           Local mode: nothing leaves your browser. <button className="underline" onClick={() => setTab('settings')}>Enable AI generation</button> for smarter handoffs.
         </p>

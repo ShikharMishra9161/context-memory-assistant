@@ -8,6 +8,10 @@ import { copyText, downloadMarkdown } from '../lib/files';
 import { Badge, Button, Field, Notice, Spinner, inputClass } from './ui';
 import MessageInspector from './MessageInspector';
 
+// The UI runs in Chrome's side panel; the plain popup is only a fallback for
+// browsers without the side panel API (opened with ?popup=1).
+const IS_POPUP = new URLSearchParams(location.search).has('popup');
+
 const STAGE_LABELS = {
   waiting: 'Waiting for the page to finish rendering…',
   reading: 'Reading messages…',
@@ -241,7 +245,7 @@ export default function HandoffView({ settings, tab, platform, initialDraft, onS
             <p className="text-xs text-slate-400" aria-live="polite">{STAGE_LABELS[progress.stage] || progress.stage} {progress.count ? `(${progress.count} messages so far)` : ''}</p>
           )}
           {phase === 'generating' && (
-            <p className="text-xs text-slate-400" aria-live="polite">{settings.useBackendAI ? 'Asking the backend AI to build the handoff (long chats can take a minute)…' : 'Building the handoff locally…'}</p>
+            <p className="text-xs text-slate-400" aria-live="polite">{settings.aiMode === 'off' ? 'Building the handoff locally…' : 'Asking the AI to build the handoff (long chats can take a minute)…'}</p>
           )}
           {!platform && !draft.result && (
             <p className="text-[11px] text-slate-500">Switch to a tab with an open ChatGPT, Claude or Gemini conversation, or <button className="underline hover:text-slate-300" onClick={() => setManual(true)}>paste a conversation manually</button>.</p>
@@ -288,7 +292,7 @@ export default function HandoffView({ settings, tab, platform, initialDraft, onS
             </Notice>
           )}
           {gen?.type !== 'llm' && gen?.fallbackReason && (
-            <p className="text-[11px] text-slate-500">Basic handoff: {gen.fallbackReason}. {settings.useBackendAI ? '' : 'Enable AI generation in Settings for a smarter summary.'}</p>
+            <p className="text-[11px] text-slate-500">Basic handoff: {gen.fallbackReason}. {settings.aiMode === 'off' ? 'Enable AI generation in Settings for a smarter summary.' : ''}</p>
           )}
         </div>
       )}
@@ -346,8 +350,8 @@ export default function HandoffView({ settings, tab, platform, initialDraft, onS
         <div className="flex flex-col gap-2 border-t border-slate-800 pt-3">
           <p className="text-sm font-semibold text-slate-200">Continue in a new conversation</p>
           <ol className="text-xs text-slate-400 list-decimal ml-4 space-y-0.5">
-            <li>Open a new chat below (this popup will close; your handoff stays saved).</li>
-            <li>Paste with <kbd className="bg-slate-800 px-1 rounded">Ctrl</kbd>+<kbd className="bg-slate-800 px-1 rounded">V</kbd>, or reopen this popup and use “Insert into chat”.</li>
+            <li>Open a new chat below. Your handoff stays saved{IS_POPUP ? ' even though this popup closes' : ' and this panel stays open'}.</li>
+            <li>Paste with <kbd className="bg-slate-800 px-1 rounded">Ctrl</kbd>+<kbd className="bg-slate-800 px-1 rounded">V</kbd>, or {IS_POPUP ? 'reopen this popup and ' : ''}click “Insert into this tab's chat box” once the new chat has loaded.</li>
             <li>Review and press Send yourself — nothing is sent automatically.</li>
           </ol>
           <div className="grid grid-cols-3 gap-2">

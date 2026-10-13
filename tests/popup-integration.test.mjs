@@ -65,7 +65,8 @@ test('client token is generated once, is 256-bit hex, and can be imported', asyn
 
 test('remote features are off by default (consent required)', async () => {
   const s = await settingsMod.getSettings();
-  assert.equal(s.useBackendAI, false);
+  assert.equal(s.aiMode, 'off');
+  assert.equal(s.showInjectButton, false);
   assert.equal(s.syncToBackend, false);
   assert.equal(s.apiBase, 'http://localhost:4000');
 });
@@ -152,7 +153,7 @@ test('remote delete failures are queued and retried on the next sync', async () 
 });
 
 test('generation: local when AI is off, backend when on, local fallback when backend fails', async () => {
-  const off = await generateHandoff({ extraction, mode: 'continue', projectName: 'Infra', customInstructions: '', settings: { useBackendAI: false } });
+  const off = await generateHandoff({ extraction, mode: 'continue', projectName: 'Infra', customInstructions: '', settings: { aiMode: 'off' } });
   assert.equal(off.generator.type, 'deterministic');
   assert.match(off.generator.fallbackReason, /turned off/);
   assert.match(off.markdown, /```yaml\non: \[push\]\n```/);
@@ -160,13 +161,54 @@ test('generation: local when AI is off, backend when on, local fallback when bac
   const llm = { name: 'fake', model: 'x', generate: async () => JSON.stringify({ nextSteps: { next: 'Add a lint job' } }) };
   const backend = await startBackend({ llm });
   try {
-    const on = await generateHandoff({ extraction, mode: 'continue', projectName: 'Infra', customInstructions: '', settings: { useBackendAI: true } });
+    const on = await generateHandoff({ extraction, mode: 'continue', projectName: 'Infra', customInstructions: '', settings: { aiMode: 'backend' } });
     assert.equal(on.generator.type, 'llm');
     assert.equal(on.handoff.nextSteps.next, 'Add a lint job');
   } finally { await backend.close(); }
 
-  const down = await generateHandoff({ extraction, mode: 'quick', projectName: '', customInstructions: '', settings: { useBackendAI: true } });
+  const down = await generateHandoff({ extraction, mode: 'quick', projectName: '', customInstructions: '', settings: { aiMode: 'backend' } });
   assert.equal(down.generator.type, 'deterministic');
   assert.match(down.notice, /AI generation failed/);
   assert.match(down.markdown, /backend unavailable/);
+});
+
+test('settings migrate the old useBackendAI flag to aiMode', async () => {
+  await chrome.storage.local.set({ 'cma.settings': { useBackendAI: true, apiBase: 'http://x:1' } });
+  const s = await settingsMod.getSettings();
+  assert.equal(s.aiMode, 'backend');
+  assert.equal(s.useBackendAI, undefined);
+  assert.deepEqual(s.byok, { provider: 'gemini', apiKey: '', model: '' });
+  const saved = await settingsMod.saveSettings({ byok: { apiKey: '  k  ' } });
+  assert.deepEqual(saved.byok, { provider: 'gemini', apiKey: 'k', model: '' }, 'partial byok patch keeps other fields and trims the key');
+});
+
+test('own API key: calls the provider directly from the browser and falls back on failure', async () => {
+  const realFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, headers: init.headers });
+    return { ok: true, status: 200, text: async () => JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({ nextSteps: { next: 'Add a lint job (from Claude)' } }) }], stop_reason: 'end_turn' }) };
+  };
+  try {
+    const settings = { aiMode: 'byok', byok: { provider: 'anthropic', apiKey: 'sk-test', model: '' } };
+    const r = await generateHandoff({ extraction, mode: 'continue', projectName: 'Infra', customInstructions: '', settings });
+    assert.equal(r.generator.type, 'llm');
+    assert.equal(r.generator.provider, 'anthropic');
+    assert.equal(r.handoff.nextSteps.next, 'Add a lint job (from Claude)');
+    assert.equal(calls[0].url, 'https://api.anthropic.com/v1/messages');
+    assert.equal(calls[0].headers['x-api-key'], 'sk-test');
+    assert.equal(calls[0].headers['anthropic-dangerous-direct-browser-access'], 'true');
+
+    globalThis.fetch = async () => ({ ok: false, status: 401, text: async () => JSON.stringify({ error: { message: 'invalid x-api-key' } }) });
+    const bad = await generateHandoff({ extraction, mode: 'continue', projectName: '', customInstructions: '', settings });
+    assert.equal(bad.generator.type, 'deterministic');
+    assert.match(bad.notice, /Anthropic Claude could not generate/);
+    assert.match(bad.markdown, /AUTH/);
+
+    const noKey = await generateHandoff({ extraction, mode: 'continue', projectName: '', customInstructions: '', settings: { aiMode: 'byok', byok: { provider: 'gemini', apiKey: '' } } });
+    assert.equal(noKey.generator.type, 'deterministic');
+    assert.match(noKey.notice, /no API key/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

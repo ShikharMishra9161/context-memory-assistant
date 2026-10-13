@@ -9,7 +9,9 @@
     "lint": "npm run lint --prefix extension/popup",
     "build:popup": "npm run build --prefix extension/popup",
     "build": "npm run build --prefix extension/popup",
-    "sync-core": "node scripts/sync-core.mjs"
+    "sync-core": "node scripts/sync-core.mjs",
+    "package": "bash build-extension.sh",
+    "icons": "node scripts/make-icons.mjs"
   },
   "keywords": [],
   "author": "",

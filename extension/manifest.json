@@ -1,21 +1,34 @@
 {
   "manifest_version": 3,
   "name": "Context Memory Assistant",
-  "version": "1.1.0",
-  "description": "Extract the context of a ChatGPT, Claude or Gemini conversation and continue it in a new chat without losing your project state.",
-  "permissions": ["storage", "unlimitedStorage", "activeTab", "scripting", "alarms", "clipboardWrite"],
+  "short_name": "Context Memory",
+  "version": "1.2.0",
+  "description": "Move a long ChatGPT, Claude or Gemini conversation into a new chat without losing your project context.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": ["storage", "unlimitedStorage", "scripting", "alarms", "clipboardWrite", "sidePanel"],
   "host_permissions": [
-    "http://localhost:4000/*",
-    "http://127.0.0.1:4000/*",
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://gemini.google.com/*",
-    "https://claude.ai/*",
-    "https://context-memory-api.onrender.com/*"
+    "https://claude.ai/*"
+  ],
+  "optional_host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"
+  },
+  "side_panel": {
+    "default_path": "dist-popup/index.html"
   },
   "content_scripts": [
     {
@@ -53,6 +66,11 @@
     }
   ],
   "action": {
-    "default_popup": "dist-popup/index.html"
+    "default_title": "Context Memory Assistant",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    }
   }
 }

@@ -1,4 +1,18 @@
-import { apiFetch, getClientToken } from '../lib/settings.js';
+import { apiFetch, getClientToken, getSettings } from '../lib/settings.js';
+
+// Clicking the toolbar icon opens the side panel, which stays open while the
+// user switches tabs. Browsers without the side panel API get the popup.
+if (chrome.sidePanel?.setPanelBehavior) {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
+} else {
+  chrome.action.setPopup({ popup: 'dist-popup/index.html?popup=1' });
+}
+
+// Background requests only go to a backend the user has actually set up.
+async function backendInUse() {
+  const s = await getSettings();
+  return s.aiMode === 'backend' || s.syncToBackend || s.showInjectButton;
+}
 
 // Selector config — update here if sites change their DOM
 const SELECTORS = {
@@ -134,7 +148,7 @@ async function reloadAiTabs() {
 // Sync on extension install / update
 chrome.runtime.onInstalled.addListener((details) => {
   getClientToken().catch(console.error);
-  syncMemories().catch(err => console.warn('[CMA] Memory sync skipped:', err.message));
+  backendInUse().then(use => use && syncMemories()).catch(err => console.warn('[CMA] Memory sync skipped:', err.message));
 
   if (details.reason === 'update') {
     reloadAiTabs().catch(console.error);
@@ -146,7 +160,8 @@ chrome.runtime.onInstalled.addListener((details) => {
 chrome.alarms.create('syncMemories', { periodInMinutes: 5 });
 chrome.alarms.create('keepAlive', { periodInMinutes: 10 });
 
-chrome.alarms.onAlarm.addListener((alarm) => {
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (!(await backendInUse().catch(() => false))) return;
   if (alarm.name === 'syncMemories') {
     syncMemories().catch(err => console.warn('[CMA] Memory sync skipped:', err.message));
   }
@@ -157,7 +172,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 if (chrome.runtime.onStartup) {
-  chrome.runtime.onStartup.addListener(() => {
-    apiFetch('/health', { timeoutMs: 10000 }).catch(() => {});
+  chrome.runtime.onStartup.addListener(async () => {
+    if (await backendInUse().catch(() => false)) apiFetch('/health', { timeoutMs: 10000 }).catch(() => {});
   });
 }

@@ -16,15 +16,13 @@ cp -r extension/dist-popup  extension/dist/
 cp -r extension/background  extension/dist/
 cp -r extension/content     extension/dist/
 cp -r extension/lib         extension/dist/
-if [ -d extension/icons ] && [ -n "$(ls -A extension/icons 2>/dev/null)" ]; then
-  cp -r extension/icons extension/dist/
-fi
+cp -r extension/icons       extension/dist/
 
-if command -v zip >/dev/null 2>&1; then
-  echo "🗜️ Creating ZIP..."
-  rm -f context-memory-assistant.zip
-  (cd extension/dist && zip -qr ../../context-memory-assistant.zip .)
-  echo "✅ Done → context-memory-assistant.zip"
+rm -f context-memory-assistant.zip
+node scripts/zip-dir.mjs extension/dist context-memory-assistant.zip
+
+if [ -f context-memory-assistant.zip ]; then
+  echo "✅ Done → context-memory-assistant.zip (upload this to the Chrome Web Store)"
 else
-  echo "✅ Done → extension/dist (zip not installed; ZIP skipped)"
+  echo "✅ Done → extension/dist (no zip tool found; ZIP skipped)"
 fi

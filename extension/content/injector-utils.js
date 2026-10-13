@@ -143,6 +143,16 @@ window.CMA = {
     location.reload();
   },
 
+  // The button is opt-in (Settings → Memories). Reads extension storage directly.
+  async injectButtonEnabled() {
+    try {
+      const data = await chrome.storage.local.get('cma.settings');
+      return Boolean(data['cma.settings']?.showInjectButton);
+    } catch {
+      return false;
+    }
+  },
+
   async getSelectors() {
     const { selectors } = await this.safeSendMessage({ type: 'GET_SELECTORS' });
     return selectors || {};
@@ -326,3 +336,13 @@ try {
 }
 
 window.CMA.startContextWatch();
+
+// Remove the button as soon as the user turns it off in Settings.
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes['cma.settings']) return;
+    if (!changes['cma.settings'].newValue?.showInjectButton) document.getElementById('cma-inject-btn')?.remove();
+  });
+} catch {
+  // extension context gone
+}

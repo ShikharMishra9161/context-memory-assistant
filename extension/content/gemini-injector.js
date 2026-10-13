@@ -4,6 +4,7 @@
   let selectors;
   try {
     selectors = await window.CMA.getSelectors();
+    if (!(await window.CMA.injectButtonEnabled())) return;
   } catch (err) {
     console.error('[CMA] Failed to load selectors:', err);
     if (window.CMA.isContextInvalidatedError(err)) {
