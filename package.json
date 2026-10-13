@@ -3,13 +3,18 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build:popup": "npm run build --prefix extension/popup"
+    "test": "node --test tests/ && npm test --prefix backend",
+    "test:core": "node --test tests/",
+    "test:backend": "npm test --prefix backend",
+    "lint": "npm run lint --prefix extension/popup",
+    "build:popup": "npm run build --prefix extension/popup",
+    "build": "npm run build --prefix extension/popup",
+    "sync-core": "node scripts/sync-core.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Extract the context of a ChatGPT, Claude or Gemini conversation and continue it in a new chat.",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "cors": "^2.8.6",
@@ -18,6 +23,7 @@
     "mongoose": "^9.7.0"
   },
   "devDependencies": {
+    "jsdom": "^26.1.0",
     "nodemon": "^3.1.14"
   }
 }

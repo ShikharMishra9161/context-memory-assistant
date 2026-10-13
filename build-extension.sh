@@ -1,27 +1,30 @@
 #!/bin/bash
+# Builds a self-contained extension folder (extension/dist) and a Web Store ZIP.
+# For local development you can instead load the extension/ folder directly
+# after `npm run build` (the popup is built into extension/dist-popup).
 set -e
 
 echo "🔨 Building popup..."
-cd extension/popup
-npm run build
-cd ../..
+npm run build --prefix extension/popup
 
-echo "📦 Assembling dist/..."
+echo "📦 Assembling extension/dist..."
 rm -rf extension/dist
-mkdir -p extension/dist/{popup,background,content,icons}
+mkdir -p extension/dist
 
-cp -r extension/popup/dist/* extension/dist/popup/
-cp extension/manifest.json    extension/dist/
-cp extension/background/service-worker.js  extension/dist/background/
-cp extension/content/injector-utils.js     extension/dist/content/
-cp extension/content/chatgpt-injector.js   extension/dist/content/
-cp extension/content/gemini-injector.js    extension/dist/content/
-cp extension/content/claude-injector.js    extension/dist/content/
-cp -r extension/icons/*                    extension/dist/icons/
+cp extension/manifest.json extension/dist/
+cp -r extension/dist-popup  extension/dist/
+cp -r extension/background  extension/dist/
+cp -r extension/content     extension/dist/
+cp -r extension/lib         extension/dist/
+if [ -d extension/icons ] && [ -n "$(ls -A extension/icons 2>/dev/null)" ]; then
+  cp -r extension/icons extension/dist/
+fi
 
-echo "🗜️ Creating ZIP..."
-cd extension/dist
-zip -r ../../context-memory-assistant.zip .
-cd ../..
-
-echo "✅ Done → context-memory-assistant.zip ready for Web Store"
+if command -v zip >/dev/null 2>&1; then
+  echo "🗜️ Creating ZIP..."
+  rm -f context-memory-assistant.zip
+  (cd extension/dist && zip -qr ../../context-memory-assistant.zip .)
+  echo "✅ Done → context-memory-assistant.zip"
+else
+  echo "✅ Done → extension/dist (zip not installed; ZIP skipped)"
+fi

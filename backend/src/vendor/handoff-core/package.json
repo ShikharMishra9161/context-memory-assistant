@@ -1,0 +1,8 @@
+{
+  "name": "handoff-core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "Dependency-free conversation normalization and context-handoff generation shared by the extension and backend."
+}

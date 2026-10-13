@@ -1,19 +1,40 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// text-embedding-004 was retired Jan 2026; gemini-embedding-001 is the replacement
-const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
+// Embeddings are optional: without GEMINI_API_KEY, memories are still saved and
+// search falls back to keyword matching.
+let model = null;
+function getModel() {
+  if (!process.env.GEMINI_API_KEY) return null;
+  if (!model) {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    // text-embedding-004 was retired Jan 2026; gemini-embedding-001 is the replacement
+    model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
+  }
+  return model;
+}
+
+function isEmbeddingAvailable() {
+  return Boolean(process.env.GEMINI_API_KEY);
+}
 
 /**
- * Generate 768-dim embedding for a string
+ * Generate 768-dim embedding for a string. Returns [] when embeddings are
+ * unavailable or the request fails, so callers never lose a save.
  */
 async function embed(text) {
-  const result = await model.embedContent({
-    content: { parts: [{ text }] },
-    taskType: 'RETRIEVAL_DOCUMENT',
-    outputDimensionality: 768,
-  });
-  return result.embedding.values;
+  const m = getModel();
+  if (!m) return [];
+  try {
+    const result = await m.embedContent({
+      content: { parts: [{ text }] },
+      taskType: 'RETRIEVAL_DOCUMENT',
+      outputDimensionality: 768,
+    });
+    return result.embedding.values;
+  } catch (err) {
+    console.warn('[embedder] embedding failed:', String(err.message).slice(0, 200));
+    return [];
+  }
 }
 
 /**
@@ -44,4 +65,19 @@ function rankByEmbedding(queryEmbedding, memories, topK = 5) {
     .slice(0, topK);
 }
 
-module.exports = { embed, cosineSimilarity, rankByEmbedding };
+/**
+ * Keyword fallback: score by how many query words appear in title/content/tags.
+ */
+function rankByKeywords(query, memories, topK = 5) {
+  const words = query.toLowerCase().split(/\W+/).filter(w => w.length > 2);
+  return memories
+    .map(m => {
+      const hay = `${m.title} ${m.content} ${(m.tags || []).join(' ')}`.toLowerCase();
+      return { ...m.toObject(), score: words.filter(w => hay.includes(w)).length };
+    })
+    .filter(m => m.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
+}
+
+module.exports = { embed, cosineSimilarity, rankByEmbedding, rankByKeywords, isEmbeddingAvailable };

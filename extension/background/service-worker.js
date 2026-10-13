@@ -1,10 +1,5 @@
-const IS_DEV = false; // flip to true during local dev
-const API_BASE = IS_DEV
-  ? 'http://localhost:3001'
-  : 'https://context-memory-api.onrender.com';
+import { apiFetch, getClientToken } from '../lib/settings.js';
 
-
- 
 // Selector config — update here if sites change their DOM
 const SELECTORS = {
   chatgpt: '#prompt-textarea',
@@ -14,8 +9,7 @@ const SELECTORS = {
 
 // Fetch memories from backend, cache in chrome.storage
 async function syncMemories() {
-  const res = await fetch(`${API_BASE}/memory`);
-  const memories = await res.json();
+  const memories = await apiFetch('/memory');
 
   await chrome.storage.local.set({
     memories,
@@ -25,8 +19,20 @@ async function syncMemories() {
   return memories;
 }
 
+// Reply helper: run an async task and always answer the sender.
+function respond(reply, task, onError) {
+  task()
+    .then(reply)
+    .catch(async (error) => {
+      console.error('[CMA]', error.message);
+      reply(await onError(error));
+    });
+  return true;
+}
+
 // Listen for messages from content scripts / popup
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || typeof msg.type !== 'string') return;
 
   // Get selectors
   if (msg.type === 'GET_SELECTORS') {
@@ -42,114 +48,76 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     return true;
   }
 
-  // Semantic memory search
+  // Semantic memory search, falling back to cached memories
   if (msg.type === 'SEARCH_MEMORIES') {
-    fetch(`${API_BASE}/memory/search`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        query: msg.query,
-        topK: msg.topK || 5
-      })
-    })
-      .then(r => r.json())
-      .then(memories => {
-        reply({ memories });
-      })
-      .catch(error => {
-        console.error('Search failed:', error);
-
-        // Fallback to cached memories
-        chrome.storage.local.get(['memories'], (data) => {
-          reply({
-            memories: data.memories || []
-          });
-        });
-      });
-
-    return true;
+    return respond(
+      reply,
+      async () => ({
+        memories: await apiFetch('/memory/search', {
+          method: 'POST',
+          body: { query: msg.query, topK: msg.topK || 5 }
+        })
+      }),
+      async () => {
+        const data = await chrome.storage.local.get(['memories']);
+        return { memories: data.memories || [] };
+      }
+    );
   }
 
   // Force sync from backend
   if (msg.type === 'SYNC_MEMORIES') {
-    syncMemories()
-      .then(memories => reply({ memories }))
-      .catch(async (error) => {
-        console.error('Sync failed:', error);
+    return respond(
+      reply,
+      async () => ({ memories: await syncMemories() }),
+      async (error) => {
         const data = await chrome.storage.local.get(['memories']);
-        reply({ memories: data.memories || [], error: error.message });
-      });
-
-    return true;
+        return { memories: data.memories || [], error: error.message };
+      }
+    );
   }
 
   // Save memory
   if (msg.type === 'SAVE_MEMORY') {
-    fetch(`${API_BASE}/memory`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+    return respond(
+      reply,
+      async () => {
+        const memory = await apiFetch('/memory', { method: 'POST', body: msg.payload });
+        return { success: true, memory, memories: await syncMemories() };
       },
-      body: JSON.stringify(msg.payload)
-    })
-      .then(r => r.json())
-      .then(async (mem) => {
-        const memories = await syncMemories();
-        reply({ success: true, memory: mem, memories });
-      })
-      .catch(error => {
-        console.error('Save failed:', error);
-        reply({ success: false, error: error.message });
-      });
-
-    return true;
+      async (error) => ({ success: false, error: error.message })
+    );
   }
 
   // Update memory
   if (msg.type === 'UPDATE_MEMORY') {
-    fetch(`${API_BASE}/memory/${msg.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
+    return respond(
+      reply,
+      async () => {
+        const memory = await apiFetch(`/memory/${encodeURIComponent(msg.id)}`, { method: 'PUT', body: msg.payload });
+        return { success: true, memory, memories: await syncMemories() };
       },
-      body: JSON.stringify(msg.payload)
-    })
-      .then(r => r.json())
-      .then(async (mem) => {
-        const memories = await syncMemories();
-        reply({ success: true, memory: mem, memories });
-      })
-      .catch(error => {
-        console.error('Update failed:', error);
-        reply({ success: false, error: error.message });
-      });
-
-    return true;
+      async (error) => ({ success: false, error: error.message })
+    );
   }
 
   // Delete memory
   if (msg.type === 'DELETE_MEMORY') {
-    fetch(`${API_BASE}/memory/${msg.id}`, {
-      method: 'DELETE'
-    })
-      .then(async () => {
-        const memories = await syncMemories();
-        reply({ success: true, memories });
-      })
-      .catch(error => {
-        console.error('Delete failed:', error);
-        reply({ success: false, error: error.message });
-      });
-
-    return true;
+    return respond(
+      reply,
+      async () => {
+        await apiFetch(`/memory/${encodeURIComponent(msg.id)}`, { method: 'DELETE' });
+        return { success: true, memories: await syncMemories() };
+      },
+      async (error) => ({ success: false, error: error.message })
+    );
   }
 });
 
 // Reload AI tabs after extension update so content scripts reconnect
 const AI_TAB_PATTERNS = [
   'https://chatgpt.com/*',
+  'https://chat.openai.com/*',
   'https://gemini.google.com/*',
   'https://claude.ai/*',
 ];
@@ -165,43 +133,31 @@ async function reloadAiTabs() {
 
 // Sync on extension install / update
 chrome.runtime.onInstalled.addListener((details) => {
-  syncMemories().catch(console.error);
+  getClientToken().catch(console.error);
+  syncMemories().catch(err => console.warn('[CMA] Memory sync skipped:', err.message));
 
   if (details.reason === 'update') {
     reloadAiTabs().catch(console.error);
   }
 });
 
-// Sync every 5 minutes
-setInterval(() => {
-  syncMemories().catch(console.error);
-}, 5 * 60 * 1000);
+// Periodic sync + keep-alive ping. MV3 service workers are suspended when idle,
+// so chrome.alarms is used instead of setInterval.
+chrome.alarms.create('syncMemories', { periodInMinutes: 5 });
+chrome.alarms.create('keepAlive', { periodInMinutes: 10 });
 
- // --------------------------------------------------
-// Keep Render backend awake (free tier)
-// --------------------------------------------------
-
-function keepAlive() {
-  fetch(`${API_BASE}/health`)
-    .then(() => console.log('KeepAlive ping sent'))
-    .catch(err => console.warn('KeepAlive failed:', err));
-}
-
-// Create alarm every 10 minutes
-chrome.alarms.create('keepAlive', {
-  periodInMinutes: 10
-});
-
-// Listen for alarm
 chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'syncMemories') {
+    syncMemories().catch(err => console.warn('[CMA] Memory sync skipped:', err.message));
+  }
   if (alarm.name === 'keepAlive') {
-    keepAlive();
+    // Keeps a free-tier hosted backend (e.g. Render) awake; harmless locally.
+    apiFetch('/health', { timeoutMs: 10000 }).catch(() => {});
   }
 });
 
-// Ping once when extension/browser starts
 if (chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(() => {
-    keepAlive();
+    apiFetch('/health', { timeoutMs: 10000 }).catch(() => {});
   });
 }

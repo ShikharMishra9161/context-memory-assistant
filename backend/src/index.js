@@ -1,40 +1,39 @@
 require('dotenv').config();
-const express = require('express');
 const mongoose = require('mongoose');
-const cors = require('cors');
+const { loadConfig } = require('./config');
+const { createApp } = require('./app');
+const { createMongoHandoffStore, createMemoryHandoffStore } = require('./stores/handoffStore');
 
-const app = express();
+const config = loadConfig();
+const DB_STATES = ['disconnected', 'connected', 'connecting', 'disconnecting'];
 
-const ALLOWED_ORIGINS = [
-  'chrome-extension://*',  // extension calls
-  process.env.DASHBOARD_URL // web dashboard if any
-].filter(Boolean);
+let handoffStore;
+if (config.storage === 'memory') {
+  console.warn('STORAGE=memory: saved handoffs are kept in process memory and lost on restart.');
+  handoffStore = createMemoryHandoffStore();
+} else {
+  handoffStore = createMongoHandoffStore(mongoose);
+}
 
-app.use(cors({
-  origin: (origin, cb) => {
-    // Allow no-origin (curl, Postman) + chrome-extension://
-    if (!origin || origin.startsWith('chrome-extension://')) return cb(null, true);
-    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-    cb(new Error('Not allowed by CORS'));
-  }
-}));
+// The server starts even when MongoDB is unreachable: AI generation keeps
+// working and the extension keeps handoffs locally until the database is back.
+if (config.mongoUri) {
+  mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 10000 })
+    .then(() => console.log('MongoDB connected'))
+    .catch(err => console.error(`MongoDB connection failed: ${err.message}. Storage endpoints will return 503.`));
+  mongoose.connection.on('disconnected', () => console.warn('MongoDB disconnected'));
+} else if (config.storage !== 'memory') {
+  console.warn('MONGO_URI is not set. Storage endpoints will return 503 (or set STORAGE=memory for a non-persistent dev store).');
+}
 
-app.use(express.json());
-
-// Health check — Render pings this to keep service alive
-app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
-
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => { console.error(err); process.exit(1); });
-
-app.use('/memory', require('./routes/memory'));
-
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: err.message });
+const app = createApp({
+  config,
+  handoffStore,
+  dbStatus: () => (config.storage === 'memory' ? 'memory' : DB_STATES[mongoose.connection.readyState] || 'unknown'),
+  memoryRoutes: require('./routes/memory'),
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`Backend on ${PORT}`));
+app.listen(config.port, () => {
+  const llm = config.llm.provider === 'none' ? 'not configured (deterministic handoffs only)' : config.llm.provider;
+  console.log(`Backend on ${config.port} — LLM: ${llm}`);
+});

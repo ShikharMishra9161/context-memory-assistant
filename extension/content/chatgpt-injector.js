@@ -26,7 +26,7 @@
       const context = window.CMA.buildContextBlock(memories);
 
       if (!context) {
-        window.CMA.flashButton(btn, '⚠️ No memories saved');
+        window.CMA.flashButton(btn, window.CMA.NO_MEMORIES_MESSAGE, undefined, 5000);
         return;
       }
 

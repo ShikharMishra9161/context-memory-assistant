@@ -259,7 +259,11 @@ window.CMA = {
     });
   },
 
-  flashButton(btn, msg, resetLabel) {
+  // Shown when there is nothing to inject: points users to the toolbar popup,
+  // where memories are added and conversations are extracted.
+  NO_MEMORIES_MESSAGE: '⚠️ No memories yet — click the extension icon in the toolbar',
+
+  flashButton(btn, msg, resetLabel, durationMs = 2000) {
     const label = resetLabel || btn.dataset.cmaLabel || '🧠 Inject Context';
     btn.innerHTML = msg;
 
