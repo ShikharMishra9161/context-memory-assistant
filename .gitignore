@@ -3,3 +3,6 @@ node_modules/
 
 dist/
 dist-popup/
+# Build outputs
+extension/dist/
+context-memory-assistant.zip

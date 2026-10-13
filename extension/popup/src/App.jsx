@@ -1,140 +1,97 @@
-import { useState, useEffect } from 'react';
-import MemoryList from './components/MemoryList';
-import AddForm from './components/AddForm';
+import { useEffect, useState } from 'react';
+import { getSettings } from '../../lib/settings.js';
+import { LLM_PROVIDERS } from '../../../shared/handoff-core/index.js';
+import { getActiveTab } from './lib/tabs';
+import { detectPlatform } from './lib/platforms';
+import { loadDraft, saveDraft } from './lib/store';
+import HandoffView from './components/HandoffView';
+import SavedView from './components/SavedView';
+import SettingsView from './components/SettingsView';
+import MemoriesView from './components/MemoriesView';
+
+const TABS = [
+  ['handoff', 'Handoff'],
+  ['saved', 'Saved'],
+  ['memories', 'Memories'],
+  ['settings', 'Settings'],
+];
 
 export default function App() {
-  const [memories, setMemories] = useState([]);
-  const [view, setView] = useState('list');
-  const [editingMemory, setEditingMemory] = useState(null);
-  const [syncing, setSyncing] = useState(false);
-  const [filter, setFilter] = useState('all');
-  const [error, setError] = useState('');
+  const [tab, setTab] = useState('handoff');
+  const [settings, setSettings] = useState(null);
+  const [activeTab, setActiveTab] = useState(null);
+  const [draft, setDraft] = useState(undefined);
+  const [draftKey, setDraftKey] = useState(0);
+  const [savedVersion, setSavedVersion] = useState(0);
+  const [loadError, setLoadError] = useState('');
 
-  useEffect(() => { loadMemories(); }, []);
+  useEffect(() => {
+    Promise.all([getSettings(), getActiveTab(), loadDraft()])
+      .then(([s, t, d]) => { setSettings(s); setActiveTab(t); setDraft(d); })
+      .catch(err => setLoadError(err.message));
+  }, []);
 
-  async function loadMemories() {
-    try {
-      setError('');
-      const res = await chrome.runtime.sendMessage({ type: 'GET_MEMORIES' });
-      setMemories(res?.memories || []);
-    } catch (err) {
-      setError('Could not load memories. Is the backend running?');
-      console.error(err);
-    }
+  // The side panel stays open while the user switches tabs or navigates, so
+  // keep the active tab current (e.g. after opening a new chat).
+  useEffect(() => {
+    const refresh = () => getActiveTab().then(setActiveTab).catch(() => {});
+    const onUpdated = (id, change, t) => { if (t.active && (change.url || change.status === 'complete')) refresh(); };
+    chrome.tabs.onActivated.addListener(refresh);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.windows?.onFocusChanged?.addListener(refresh);
+    return () => {
+      chrome.tabs.onActivated.removeListener(refresh);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.windows?.onFocusChanged?.removeListener(refresh);
+    };
+  }, []);
+
+  // "Update from current chat" on a saved handoff: start a draft that targets it.
+  async function useForUpdate(record) {
+    const next = { mode: record.mode || settings.defaultMode, projectName: record.projectName || '', customInstructions: '', targetId: record.id, title: record.title };
+    await saveDraft(next);
+    setDraft(next);
+    setDraftKey(k => k + 1);
+    setTab('handoff');
   }
 
-  async function sync() {
-    setSyncing(true);
-    setError('');
-    try {
-      const res = await chrome.runtime.sendMessage({ type: 'SYNC_MEMORIES' });
-      if (res?.error) throw new Error(res.error);
-      setMemories(res?.memories || []);
-    } catch (err) {
-      setError('Sync failed. Start the backend on localhost:4000.');
-      console.error(err);
-    } finally {
-      setSyncing(false);
-    }
-  }
+  if (loadError) return <p className="p-4 text-sm text-red-400">Failed to start: {loadError}</p>;
+  if (!settings || draft === undefined) return <p className="p-4 text-sm text-slate-500">Loading…</p>;
 
-  async function handleSave(data) {
-    setError('');
-    try {
-      const res = editingMemory
-        ? await chrome.runtime.sendMessage({
-            type: 'UPDATE_MEMORY',
-            id: editingMemory._id,
-            payload: data,
-          })
-        : await chrome.runtime.sendMessage({ type: 'SAVE_MEMORY', payload: data });
-
-      if (res?.error || res?.success === false) {
-        throw new Error(res?.error || 'Save failed');
-      }
-
-      setMemories(res?.memories || []);
-      setEditingMemory(null);
-      setView('list');
-    } catch (err) {
-      setError(err.message || 'Failed to save memory.');
-      console.error(err);
-    }
-  }
-
-  async function handleDelete(id) {
-    setError('');
-    try {
-      const res = await chrome.runtime.sendMessage({ type: 'DELETE_MEMORY', id });
-      if (res?.error || res?.success === false) {
-        throw new Error(res?.error || 'Delete failed');
-      }
-      setMemories(res?.memories || memories.filter(m => m._id !== id));
-    } catch (err) {
-      setError(err.message || 'Failed to delete memory.');
-      console.error(err);
-    }
-  }
-
-  function openAdd() {
-    setEditingMemory(null);
-    setView('add');
-  }
-
-  function openEdit(memory) {
-    setEditingMemory(memory);
-    setView('add');
-  }
-
-  function goBack() {
-    setEditingMemory(null);
-    setView('list');
-  }
+  const platform = detectPlatform(activeTab?.url);
+  const modeLabel = settings.aiMode === 'backend' ? 'AI via your backend'
+    : settings.aiMode === 'byok' ? `AI: ${LLM_PROVIDERS[settings.byok.provider]?.label || settings.byok.provider}`
+      : 'Local mode';
 
   return (
-    <div className="p-4 flex flex-col gap-3">
-      <div className="flex justify-between items-center">
+    <div className="flex flex-col">
+      <header className="px-4 pt-3 flex justify-between items-center">
         <h1 className="text-indigo-400 font-bold text-base">🧠 Context Memory</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={sync}
-            disabled={syncing}
-            className="text-xs bg-slate-700 hover:bg-slate-600 disabled:opacity-50 px-3 py-1.5 rounded-md transition-colors"
-          >
-            {syncing ? '⟳' : '↺'} Sync
+        <span className="text-[10px] text-slate-500">{modeLabel}</span>
+      </header>
+      <nav className="px-4 mt-2 flex gap-1 border-b border-slate-800" role="tablist">
+        {TABS.map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+            className={`text-xs px-3 py-2 -mb-px border-b-2 transition-colors ${tab === id ? 'border-indigo-500 text-slate-100' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+            {label}
           </button>
-          <button
-            onClick={() => (view === 'add' ? goBack() : openAdd())}
-            className="text-xs bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded-md transition-colors"
-          >
-            {view === 'add' ? '← Back' : '+ Add Memory'}
-          </button>
+        ))}
+      </nav>
+      <main className="p-4">
+        {/* Kept mounted (hidden) so switching tabs never loses the working draft. */}
+        <div hidden={tab !== 'handoff'}>
+          <HandoffView key={draftKey} settings={settings} tab={activeTab} platform={platform} initialDraft={draft}
+            onSaved={() => setSavedVersion(v => v + 1)} />
         </div>
-      </div>
-
-      {error && (
-        <p className="text-xs text-red-400 bg-red-950/40 border border-red-900/50 rounded-md px-3 py-2">
-          {error}
+        {tab === 'saved' && <SavedView settings={settings} onUseForUpdate={useForUpdate} refreshKey={savedVersion} />}
+        {tab === 'memories' && <MemoriesView />}
+        {tab === 'settings' && <SettingsView settings={settings} onChange={s => setSettings(s)} />}
+      </main>
+      {tab === 'handoff' && settings.aiMode === 'off' && !draft?.result && (
+        <p className="px-4 pb-3 text-[10px] text-slate-500">
+          Local mode: nothing leaves your browser. <button className="underline" onClick={() => setTab('settings')}>Enable AI generation</button> for smarter handoffs.
         </p>
       )}
-
-      {view === 'add' ? (
-        <AddForm
-          key={editingMemory?._id || 'new'}
-          initial={editingMemory}
-          onSave={handleSave}
-        />
-      ) : (
-        <MemoryList
-          memories={memories}
-          filter={filter}
-          setFilter={setFilter}
-          onDelete={handleDelete}
-          onEdit={openEdit}
-        />
-      )}
-
-      <p className="text-[10px] text-slate-600 text-center">{memories.length} memories saved</p>
     </div>
   );
 }

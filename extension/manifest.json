@@ -1,39 +1,76 @@
 {
   "manifest_version": 3,
   "name": "Context Memory Assistant",
-  "version": "1.0.0",
-  "description": "Inject your context into AI tools automatically",
-  "permissions": ["storage", "activeTab", "scripting","alarms"],
+  "short_name": "Context Memory",
+  "version": "1.2.0",
+  "description": "Move a long ChatGPT, Claude or Gemini conversation into a new chat without losing your project context.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": ["storage", "unlimitedStorage", "scripting", "alarms", "clipboardWrite", "sidePanel"],
   "host_permissions": [
-    "http://localhost:4000/*",
     "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
     "https://gemini.google.com/*",
-    "https://claude.ai/*",
-    "https://context-memory-api.onrender.com/*"
-    
+    "https://claude.ai/*"
+  ],
+  "optional_host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"
   },
+  "side_panel": {
+    "default_path": "dist-popup/index.html"
+  },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*"],
-      "js": ["content/injector-utils.js", "content/chatgpt-injector.js"],
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "js": [
+        "content/injector-utils.js",
+        "content/extract-core.js",
+        "content/adapters/chatgpt-adapter.js",
+        "content/extract-listener.js",
+        "content/chatgpt-injector.js"
+      ],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://gemini.google.com/*"],
-      "js": ["content/injector-utils.js", "content/gemini-injector.js"],
+      "js": [
+        "content/injector-utils.js",
+        "content/extract-core.js",
+        "content/adapters/gemini-adapter.js",
+        "content/extract-listener.js",
+        "content/gemini-injector.js"
+      ],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://claude.ai/*"],
-      "js": ["content/injector-utils.js", "content/claude-injector.js"],
+      "js": [
+        "content/injector-utils.js",
+        "content/extract-core.js",
+        "content/adapters/claude-adapter.js",
+        "content/extract-listener.js",
+        "content/claude-injector.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "action": {
-    "default_popup": "dist-popup/index.html"
+    "default_title": "Context Memory Assistant",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    }
   }
 }

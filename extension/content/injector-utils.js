@@ -143,6 +143,16 @@ window.CMA = {
     location.reload();
   },
 
+  // The button is opt-in (Settings → Memories). Reads extension storage directly.
+  async injectButtonEnabled() {
+    try {
+      const data = await chrome.storage.local.get('cma.settings');
+      return Boolean(data['cma.settings']?.showInjectButton);
+    } catch {
+      return false;
+    }
+  },
+
   async getSelectors() {
     const { selectors } = await this.safeSendMessage({ type: 'GET_SELECTORS' });
     return selectors || {};
@@ -259,7 +269,11 @@ window.CMA = {
     });
   },
 
-  flashButton(btn, msg, resetLabel) {
+  // Shown when there is nothing to inject: points users to the toolbar popup,
+  // where memories are added and conversations are extracted.
+  NO_MEMORIES_MESSAGE: '⚠️ No memories yet — click the extension icon in the toolbar',
+
+  flashButton(btn, msg, resetLabel, durationMs = 2000) {
     const label = resetLabel || btn.dataset.cmaLabel || '🧠 Inject Context';
     btn.innerHTML = msg;
 
@@ -322,3 +336,13 @@ try {
 }
 
 window.CMA.startContextWatch();
+
+// Remove the button as soon as the user turns it off in Settings.
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes['cma.settings']) return;
+    if (!changes['cma.settings'].newValue?.showInjectButton) document.getElementById('cma-inject-btn')?.remove();
+  });
+} catch {
+  // extension context gone
+}
