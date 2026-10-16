@@ -91,6 +91,46 @@ test('ChatGPT: fallback to conversation turns when role attributes disappear', a
   assert.deepEqual(res.messages.map(m => [m.role, m.text]), [['user', 'Hello there'], ['assistant', 'Hi! How can I help?']]);
 });
 
+// 2026 layout: no role attributes, no conversation-turn test ids, no .markdown.
+const CHATGPT_2026_HTML = `
+<main>
+  <div data-turn-key="t-user-1"><div data-content-search-turn-key="fallback-turn-0">
+    <div class="sr-only">You said:</div>
+    <div class="whitespace-pre-wrap">so now give sticky notes for this</div>
+  </div></div>
+  <div data-turn-key="t-asst-1"><div data-content-search-turn-key="fallback-turn-1">
+    <div data-talvt-turn-state="complete" class="group flex flex-col"><div class="flex flex-col gap-3"><div class="block-BQZwFn">
+      <div data-content-search-unit-key="fallback-turn-1:1:assistant" data-chatgpt-search-message-ids="c1eba7fc c1eba7fc"><div>
+        <div data-chatgpt-selection-message-id="c1eba7fc" class="group flex min-w-0 flex-col">
+          <div data-markdown-text-style="assistant-message" class="MarkdownRoot-rZKhxa">
+            <p class="Paragraph-kKnbIo">Make sticky notes.</p>
+            <div class="CodeBlock-zu1QM3"><div data-code-block="true" class="Root-iW7ipz">
+              <div class="flex"><span>SQL</span><button>Copy</button></div>
+              <div class="relative"><div class="InlineCodePane-EYx4bd"><div class="relative z-0 flex"><div class="chatgpt-code-scrollport">
+                <pre class="m-0 flex-1"><code><span>SELECT</span> column1, column2
+<span>FROM</span> table;</code></pre>
+              </div></div></div></div>
+            </div></div>
+          </div>
+        </div>
+      </div></div>
+    </div></div></div>
+  </div></div>
+</main>`;
+
+test('ChatGPT: 2026 layout with search-unit keys and data-code-block wrappers', async () => {
+  const w = page('https://chatgpt.com/c/6abd0e42', CHATGPT_2026_HTML, 'chatgpt');
+  const res = await run(w, FAST);
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.messages.map(m => m.role), ['user', 'assistant']);
+  assert.equal(res.messages[0].text, 'so now give sticky notes for this');
+  assert.equal(res.messages[1].nativeId, 'c1eba7fc');
+  assert.match(res.messages[1].text, /Make sticky notes\./);
+  assert.match(res.messages[1].text, /```sql\nSELECT column1, column2\nFROM table;\n```/, 'language from header outside <pre>, not from highlight spans');
+  assert.ok(!/^SQL$/m.test(res.messages[1].text), 'code-block header not extracted as a stray line');
+  assert.ok(!/Copy/.test(res.messages[1].text), 'copy button removed');
+});
+
 const CLAUDE_HTML = `
 <div data-test-render-count="1"><div data-testid="user-message"><p>Refactor <code>auth.js</code> to use async/await.</p></div></div>
 <div data-test-render-count="1"><div data-is-streaming="false"><div class="font-claude-response"><p>Here is the refactor:</p>

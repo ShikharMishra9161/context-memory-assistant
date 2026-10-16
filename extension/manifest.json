@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Context Memory Assistant",
   "short_name": "Context Memory",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Move a long ChatGPT, Claude or Gemini conversation into a new chat without losing your project context.",
   "minimum_chrome_version": "116",
   "icons": {
